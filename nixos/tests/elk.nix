@@ -73,6 +73,23 @@ let
                 '');
               };
 
+              metricbeat = {
+                enable = true;
+                package = elk.metricbeat;
+                extraConfig = pkgs.lib.mkOptionDefault (''
+                  logging:
+                    to_syslog: true
+                    level: warning
+                    metrics.enabled: false
+                  output.elasticsearch:
+                    hosts: [ "127.0.0.1:9200" ]
+                  metricbeat.modules:
+                  - module: system
+                    metricsets: ["memory"]
+                '');
+              };
+
+
               logstash = {
                 enable = true;
                 package = elk.logstash;
@@ -214,6 +231,12 @@ let
               )
               + " | grep -v '^0$'"
           )
+
+      with subtest("Metricbeat sends memory usage to elasticsearch"):
+          one.wait_for_unit("metricbeat.service")
+          one.wait_until_succeeds(
+              total_hits({"match": {"metricset": {"name": "memory",},},}) + " | grep -v '^0$'"
+          )
     '';
   }) {};
 in pkgs.lib.mapAttrs mkElkTest ({
@@ -223,6 +246,7 @@ in pkgs.lib.mapAttrs mkElkTest ({
     kibana        = pkgs.kibana6-oss;
     journalbeat   = pkgs.journalbeat6;
     heartbeat     = pkgs.heartbeat6;
+    metricbeat    = pkgs.metricbeat6;
   };
   ELK-7 = {
     elasticsearch = pkgs.elasticsearch7-oss;
@@ -230,6 +254,7 @@ in pkgs.lib.mapAttrs mkElkTest ({
     kibana        = pkgs.kibana7-oss;
     journalbeat   = pkgs.journalbeat7;
     heartbeat     = pkgs.heartbeat7;
+    metricbeat    = pkgs.metricbeat7;
   };
 } // (if enableUnfree
   then {
@@ -239,6 +264,7 @@ in pkgs.lib.mapAttrs mkElkTest ({
       kibana        = pkgs.kibana6;
       journalbeat   = pkgs.journalbeat6;
       heartbeat     = pkgs.heartbeat6;
+      metricbeat    = pkgs.metricbeat6;
     };
     ELK-7-UNFREE = {
       elasticsearch = pkgs.elasticsearch7;
@@ -246,6 +272,7 @@ in pkgs.lib.mapAttrs mkElkTest ({
       kibana        = pkgs.kibana7;
       journalbeat   = pkgs.journalbeat7;
       heartbeat     = pkgs.heartbeat7;
+      metricbeat    = pkgs.metricbeat7;
     };
   }
   else {}))
