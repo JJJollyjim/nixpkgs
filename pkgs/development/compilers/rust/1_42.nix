@@ -17,8 +17,8 @@
 } @ args:
 
 import ./default.nix {
-  rustcVersion = "1.44.1";
-  rustcSha256 = "0ww4z2v3gxgn3zddqzwqya1gln04p91ykbrflnpdbmcd575n8bky";
+  rustcVersion = "1.42.0";
+  rustcSha256 = "0x9lxs82may6c0iln0b908cxyn1cv7h03n5cmbx3j1bas4qzks6j";
 
   llvm = llvm_9;
 
@@ -27,14 +27,17 @@ import ./default.nix {
   # Note: the version MUST be one version prior to the version we're
   # building
   bootstrapRustPackages = {
-    rustc = buildPackages.rust_1_43.packages.stable.rustc;
-    cargo = buildPackages.rust_1_43.packages.stable.cargo;
+    rustc = buildPackages.rust_1_41.packages.stable.rustc;
+    cargo = buildPackages.rust_1_41.packages.stable.cargo;
   };
 
-  selectRustPackage = pkgs: pkgs.rust_1_44;
+  selectRustPackage = pkgs: pkgs.rust_1_42;
 
   rustcPatches = [
+    ./0001-Allow-getting-no_std-from-the-config-file.patch
   ];
 }
 
 (builtins.removeAttrs args [ "fetchpatch" "llvm_9" ])
+
+

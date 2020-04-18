@@ -17,8 +17,8 @@
 } @ args:
 
 import ./default.nix {
-  rustcVersion = "1.44.1";
-  rustcSha256 = "0ww4z2v3gxgn3zddqzwqya1gln04p91ykbrflnpdbmcd575n8bky";
+  rustcVersion = "1.43.0";
+  rustcSha256 = "18akhk0wz1my6y9vhardriy2ysc482z0fnjdcgs9gy59kmnarxkm";
 
   llvm = llvm_9;
 
@@ -27,11 +27,11 @@ import ./default.nix {
   # Note: the version MUST be one version prior to the version we're
   # building
   bootstrapRustPackages = {
-    rustc = buildPackages.rust_1_43.packages.stable.rustc;
-    cargo = buildPackages.rust_1_43.packages.stable.cargo;
+    rustc = buildPackages.rust_1_42.packages.stable.rustc;
+    cargo = buildPackages.rust_1_42.packages.stable.cargo;
   };
 
-  selectRustPackage = pkgs: pkgs.rust_1_44;
+  selectRustPackage = pkgs: pkgs.rust_1_43;
 
   rustcPatches = [
   ];
