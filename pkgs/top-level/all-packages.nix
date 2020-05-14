@@ -17019,7 +17019,7 @@ in
   });
 
   # The current default kernel / kernel modules.
-  linuxPackages = linuxPackages_5_4;
+  linuxPackages = linuxPackages_5_6;
   linux = linuxPackages.kernel;
 
   # Update this when adding the newest kernel major version!
