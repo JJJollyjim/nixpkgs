@@ -82,7 +82,13 @@ stdenv.mkDerivation rec {
     ./no-etc-install.patch
     ./fix-qemu-ga.patch
     ./9p-ignore-noatime.patch
-  ] ++ optional nixosTestRunner ./force-uid0-on-9p.patch
+  ] ++ optionals nixosTestRunner [
+      ./force-uid0-on-9p.patch
+      ./virtiofsd-nolock.patch
+      ./virtiofsd-nosandbox.patch
+      ./virtiofsd-map-uid0.patch
+      ./virtiofsd-ignore-noatime.patch
+    ]
     ++ optionals stdenv.hostPlatform.isMusl [
     (fetchpatch {
       url = "https://raw.githubusercontent.com/alpinelinux/aports/2bb133986e8fa90e2e76d53369f03861a87a74ef/main/qemu/xattr_size_max.patch";

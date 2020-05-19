@@ -117,6 +117,10 @@ let
         idx=$((idx + 1))
       '')}
 
+      ulimit -Sn "$(ulimit -Hn)"
+
+      ${qemu}/libexec/virtiofsd -o cache=always -o source=/nix/store --socket-path="$TMPDIR/virtio-fs-store" --root-uid=65534 --root-gid=65534 &
+
       # Start QEMU.
       exec ${qemuBinary qemu} \
           -name ${vmName} \
@@ -124,9 +128,11 @@ let
           -smp ${toString config.virtualisation.cores} \
           -device virtio-rng-pci \
           ${concatStringsSep " " config.virtualisation.qemu.networkingOptions} \
-          -virtfs local,path=/nix/store,security_model=none,mount_tag=store \
+          -chardev socket,id=char0,path="$TMPDIR/virtio-fs-store" \
+          -device vhost-user-fs-pci,queue-size=1024,chardev=char0,tag=store,cache-size=2G \
           -virtfs local,path=$TMPDIR/xchg,security_model=none,mount_tag=xchg \
           -virtfs local,path=''${SHARED_DIR:-$TMPDIR/xchg},security_model=none,mount_tag=shared \
+          -object memory-backend-file,id=mem,size=${toString config.virtualisation.memorySize}M,mem-path=/dev/shm,share=on -numa node,memdev=mem \
           ${drivesCmdLine config.virtualisation.qemu.drives} \
           ${toString config.virtualisation.qemu.options} \
           $QEMU_OPTS \
@@ -508,7 +514,8 @@ in
 
     boot.initrd.availableKernelModules =
       optional cfg.writableStore "overlay"
-      ++ optional (cfg.qemu.diskInterface == "scsi") "sym53c8xx";
+      ++ optional (cfg.qemu.diskInterface == "scsi") "sym53c8xx"
+      ++ [ "virtiofs" ];
 
     virtualisation.bootDevice =
       mkDefault (if cfg.qemu.diskInterface == "scsi" then "/dev/sda" else "/dev/vda");
@@ -574,9 +581,10 @@ in
     fileSystems = mkVMOverride (
       { "/".device = cfg.bootDevice;
         ${if cfg.writableStore then "/nix/.ro-store" else "/nix/store"} =
-          { device = "store";
-            fsType = "9p";
-            options = [ "trans=virtio" "version=9p2000.L" "cache=loose" ];
+          {
+            device = "store";
+            fsType = "virtiofs";
+            options = [  ];
             neededForBoot = true;
           };
         "/tmp" = mkIf config.boot.tmpOnTmpfs

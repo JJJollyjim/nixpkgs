@@ -1,0 +1,73 @@
+diff --git a/tools/virtiofsd/fuse_i.h b/tools/virtiofsd/fuse_i.h
+index 1240828208..8153e03946 100644
+--- a/tools/virtiofsd/fuse_i.h
++++ b/tools/virtiofsd/fuse_i.h
+@@ -70,6 +70,8 @@ struct fuse_session {
+     char *vu_socket_path;
+     int   vu_listen_fd;
+     int   vu_socketfd;
++    uid_t   remap_root_uid;
++    gid_t   remap_root_gid;
+     struct fv_VuDev *virtio_dev;
+     int thread_pool_size;
+ };
+diff --git a/tools/virtiofsd/fuse_lowlevel.c b/tools/virtiofsd/fuse_lowlevel.c
+index a34a611a90..fd2fc5dd06 100644
+--- a/tools/virtiofsd/fuse_lowlevel.c
++++ b/tools/virtiofsd/fuse_lowlevel.c
+@@ -366,6 +366,8 @@ size_t fuse_add_direntry_plus(fuse_req_t req, char *buf, size_t bufsize,
+     struct fuse_direntplus *dp = (struct fuse_direntplus *)buf;
+     memset(&dp->entry_out, 0, sizeof(dp->entry_out));
+     fill_entry(&dp->entry_out, e);
++    dp->entry_out.attr.uid = (dp->entry_out.attr.uid == req->se->remap_root_uid ? 0 : dp->entry_out.attr.uid);
++    dp->entry_out.attr.gid = (dp->entry_out.attr.gid == req->se->remap_root_gid ? 0 : dp->entry_out.attr.gid);
+ 
+     struct fuse_dirent *dirent = &dp->dirent;
+     *dirent = (struct fuse_dirent){
+@@ -412,6 +414,8 @@ int fuse_reply_entry(fuse_req_t req, const struct fuse_entry_param *e,
+ 
+     memset(buf, 0, sizeof(buf));
+     fill_entry(earg, e);
++    earg->attr.uid = (earg->attr.uid == req->se->remap_root_uid ? 0 : earg->attr.uid);
++    earg->attr.gid = (earg->attr.gid == req->se->remap_root_gid ? 0 : earg->attr.gid);
+     ever->initial_version = e->initial_version;
+     ever->version_index = e->version_offset;
+     return send_reply_ok(req, buf, size);
+@@ -431,6 +435,8 @@ int fuse_reply_create(fuse_req_t req, const struct fuse_entry_param *e,
+ 
+     memset(buf, 0, sizeof(buf));
+     fill_entry(earg, e);
++    earg->attr.uid = (earg->attr.uid == req->se->remap_root_uid ? 0 : earg->attr.uid);
++    earg->attr.gid = (earg->attr.gid == req->se->remap_root_gid ? 0 : earg->attr.gid);
+     fill_open(oarg, f);
+     ever->initial_version = e->initial_version;
+     ever->version_index = e->version_offset;
+@@ -449,6 +455,8 @@ int fuse_reply_attr(fuse_req_t req, const struct stat *attr,
+     arg.attr_valid = calc_timeout_sec(attr_timeout);
+     arg.attr_valid_nsec = calc_timeout_nsec(attr_timeout);
+     convert_stat(attr, &arg.attr);
++    arg.attr.uid = (arg.attr.uid == req->se->remap_root_uid ? 0 : arg.attr.uid);
++    arg.attr.gid = (arg.attr.gid == req->se->remap_root_gid ? 0 : arg.attr.gid);
+ 
+     return send_reply_ok(req, &arg, size);
+ }
+@@ -2627,6 +2635,8 @@ static const struct fuse_opt fuse_ll_opts[] = {
+     LL_OPTION("--socket-path=%s", vu_socket_path, 0),
+     LL_OPTION("--fd=%d", vu_listen_fd, 0),
+     LL_OPTION("--thread-pool-size=%d", thread_pool_size, 0),
++    LL_OPTION("--root-uid=%d", remap_root_uid, 0),
++    LL_OPTION("--root-gid=%d", remap_root_gid, 0),
+     FUSE_OPT_END
+ };
+ 
+@@ -2646,7 +2656,9 @@ void fuse_lowlevel_help(void)
+         "    -o allow_root              allow access by root\n"
+         "    --socket-path=PATH         path for the vhost-user socket\n"
+         "    --fd=FDNUM                 fd number of vhost-user socket\n"
+-        "    --thread-pool-size=NUM     thread pool size limit (default %d)\n",
++        "    --thread-pool-size=NUM     thread pool size limit (default %d)\n"
++        "    --root-uid=NUM             uid to remap as root\n"
++        "    --root-gid=NUM             gid to remap as root\n",
+         THREAD_POOL_SIZE);
+ }
+ 
