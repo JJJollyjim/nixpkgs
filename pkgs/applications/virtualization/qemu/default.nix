@@ -41,10 +41,15 @@ stdenv.mkDerivation rec {
     + stdenv.lib.optionalString hostCpuOnly "-host-cpu-only"
     + stdenv.lib.optionalString nixosTestRunner "-for-vm-tests";
 
-  src = fetchurl {
-    url= "https://download.qemu.org/qemu-${version}.tar.xz";
-    sha256 = "1dlcwyshdp94fwd30pddxf9bn2q8dfw5jsvry2gvdj551wmaj4rg";
-  };
+  src = if nixosTestRunner
+    then
+      # /home/jamie/Misc/qemu
+      /home/jamie/outtar.tar
+    else
+      fetchurl {
+        url= "https://download.qemu.org/qemu-${version}.tar.xz";
+        sha256 = "1dlcwyshdp94fwd30pddxf9bn2q8dfw5jsvry2gvdj551wmaj4rg";
+      };
 
   nativeBuildInputs = [ python python.pkgs.sphinx pkgconfig flex bison ];
   buildInputs =
