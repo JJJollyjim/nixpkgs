@@ -281,7 +281,7 @@ in
 
     virtualisation.cores =
       mkOption {
-        default = 1;
+        default = 2;
         type = types.int;
         description =
           ''
