@@ -441,6 +441,16 @@ in
           '';
       };
 
+    virtualisation.useQBoot =
+      mkOption {
+        default = false;
+        description =
+          ''
+            If enabled, the virtual machine will use the minimal
+            qboot BIOS instead of SeaBIOS.
+          '';
+      };
+
   };
 
   config = {
@@ -520,6 +530,9 @@ in
       ])
       (mkIf cfg.useEFIBoot [
         "-pflash $TMPDIR/bios.bin"
+      ])
+      (mkIf cfg.useQBoot [
+        "-bios ${pkgs.qboot}/bios.bin"
       ])
       (mkIf (!cfg.graphics) [
         "-nographic"
