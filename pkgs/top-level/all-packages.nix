@@ -1055,6 +1055,8 @@ in
 
   glyr = callPackage ../tools/audio/glyr { };
 
+  hiccups = callPackage ../tools/system/hiccups { };
+
   hpe-ltfs = callPackage ../tools/backup/hpe-ltfs { };
 
   http2tcp = callPackage ../tools/networking/http2tcp { };
