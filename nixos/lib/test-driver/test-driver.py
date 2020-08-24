@@ -10,6 +10,9 @@ import argparse
 import atexit
 import base64
 import codecs
+import collections
+import functools
+import itertools
 import os
 import pathlib
 import ptpython.repl
@@ -88,6 +91,17 @@ CHAR_TO_KEY = {
     ")": "shift-0x0B",
 }
 
+# 31-36 inclusive are the main non-greyscale colours. we cycle them infinitely, just in case there are more than 6 machines
+machine_colours_iter = (
+    "\x1b[{}m".format(x) for x in itertools.cycle(reversed(range(31, 37)))
+)
+
+
+@functools.lru_cache()
+def pretty_machine_name(name: str) -> str:
+    return "{}{}\x1b[39m".format(next(machine_colours_iter), name)
+
+
 # Forward references
 log: "Logger"
 machines: "List[Machine]"
@@ -162,7 +176,7 @@ class Logger:
 
     def maybe_prefix(self, message: str, attributes: Dict[str, str]) -> str:
         if "machine" in attributes:
-            return "{}: {}".format(attributes["machine"], message)
+            return "{}: {}".format(pretty_machine_name(attributes["machine"]), message)
         return message
 
     def log_line(self, message: str, attributes: Dict[str, str]) -> None:
@@ -767,7 +781,7 @@ class Machine:
                 # Ignore undecodable bytes that may occur in boot menus
                 line = _line.decode(errors="ignore").replace("\r", "").rstrip()
                 self.last_lines.put(line)
-                eprint("{} # {}".format(self.name, line))
+                eprint("{} # {}".format(pretty_machine_name(self.name), line))
                 self.logger.enqueue({"msg": line, "machine": self.name})
 
         _thread.start_new_thread(process_serial_output, ())
