@@ -10,6 +10,8 @@ import argparse
 import atexit
 import base64
 import codecs
+import itertools
+import logging
 import os
 import pathlib
 import ptpython.repl
@@ -89,12 +91,22 @@ CHAR_TO_KEY = {
 }
 
 # Forward references
-log: "Logger"
 machines: "List[Machine]"
 
+logging.basicConfig(level=logging.NOTSET, format="\x1b[1m%(name)s\x1b[0m %(message)s")
+log = logging.getLogger("test-driver")
 
-def eprint(*args: object, **kwargs: Any) -> None:
-    print(*args, file=sys.stderr, **kwargs)
+machine_colours_iter = itertools.cycle(reversed(range(31, 37)))
+
+
+@contextmanager
+def log_nested(logger: logging.Logger, msg: str, *args: Any) -> Iterator[None]:
+    logger.info(msg, *args)
+
+    tic = time.time()
+    yield
+    toc = time.time()
+    logger.info("(%.2f seconds)", toc - tic)
 
 
 def make_command(args: list) -> str:
@@ -103,7 +115,7 @@ def make_command(args: list) -> str:
 
 def create_vlan(vlan_nr: str) -> Tuple[str, str, "subprocess.Popen[bytes]", Any]:
     global log
-    log.log("starting VDE switch for network {}".format(vlan_nr))
+    log.info("starting VDE switch for network %s", vlan_nr)
     vde_socket = tempfile.mkdtemp(
         prefix="nixos-test-vde-", suffix="-vde{}.ctl".format(vlan_nr)
     )
@@ -142,70 +154,6 @@ def retry(fn: Callable) -> None:
         raise Exception("action timed out")
 
 
-class Logger:
-    def __init__(self) -> None:
-        self.logfile = os.environ.get("LOGFILE", "/dev/null")
-        self.logfile_handle = codecs.open(self.logfile, "wb")
-        self.xml = XMLGenerator(self.logfile_handle, encoding="utf-8")
-        self.queue: "Queue[Dict[str, str]]" = Queue()
-
-        self.xml.startDocument()
-        self.xml.startElement("logfile", attrs={})
-
-    def close(self) -> None:
-        self.xml.endElement("logfile")
-        self.xml.endDocument()
-        self.logfile_handle.close()
-
-    def sanitise(self, message: str) -> str:
-        return "".join(ch for ch in message if unicodedata.category(ch)[0] != "C")
-
-    def maybe_prefix(self, message: str, attributes: Dict[str, str]) -> str:
-        if "machine" in attributes:
-            return "{}: {}".format(attributes["machine"], message)
-        return message
-
-    def log_line(self, message: str, attributes: Dict[str, str]) -> None:
-        self.xml.startElement("line", attributes)
-        self.xml.characters(message)
-        self.xml.endElement("line")
-
-    def log(self, message: str, attributes: Dict[str, str] = {}) -> None:
-        eprint(self.maybe_prefix(message, attributes))
-        self.drain_log_queue()
-        self.log_line(message, attributes)
-
-    def enqueue(self, message: Dict[str, str]) -> None:
-        self.queue.put(message)
-
-    def drain_log_queue(self) -> None:
-        try:
-            while True:
-                item = self.queue.get_nowait()
-                attributes = {"machine": item["machine"], "type": "serial"}
-                self.log_line(self.sanitise(item["msg"]), attributes)
-        except Empty:
-            pass
-
-    @contextmanager
-    def nested(self, message: str, attributes: Dict[str, str] = {}) -> Iterator[None]:
-        eprint(self.maybe_prefix(message, attributes))
-
-        self.xml.startElement("nest", attrs={})
-        self.xml.startElement("head", attributes)
-        self.xml.characters(message)
-        self.xml.endElement("head")
-
-        tic = time.time()
-        self.drain_log_queue()
-        yield
-        self.drain_log_queue()
-        toc = time.time()
-        self.log("({:.2f} seconds)".format(toc - tic))
-
-        self.xml.endElement("nest")
-
-
 class Machine:
     def __init__(self, args: Dict[str, Any]) -> None:
         if "name" in args:
@@ -235,7 +183,9 @@ class Machine:
         self.pid: Optional[int] = None
         self.socket = None
         self.monitor: Optional[socket.socket] = None
-        self.logger: Logger = args["log"]
+        self.logger: logging.Logger = logging.getLogger(
+            f"\x1b[{next(machine_colours_iter)}m{self.name}\x1b[39m"
+        )
         self.allow_reboot = args.get("allowReboot", False)
 
     @staticmethod
@@ -292,13 +242,13 @@ class Machine:
     def is_up(self) -> bool:
         return self.booted and self.connected
 
-    def log(self, msg: str) -> None:
-        self.logger.log(msg, {"machine": self.name})
+    def log(self, msg: str, *args: Any) -> None:
+        self.logger.info(msg, *args)
 
-    def nested(self, msg: str, attrs: Dict[str, str] = {}) -> _GeneratorContextManager:
-        my_attrs = {"machine": self.name}
-        my_attrs.update(attrs)
-        return self.logger.nested(msg, my_attrs)
+    @contextmanager
+    def nested(self, msg: str, *args: Any) -> Iterator[None]:
+        with log_nested(self.logger, msg, *args):
+            yield
 
     def wait_for_monitor_prompt(self) -> str:
         assert self.monitor is not None
@@ -314,7 +264,7 @@ class Machine:
 
     def send_monitor_command(self, command: str) -> str:
         message = ("{}\n".format(command)).encode()
-        self.log("sending monitor command: {}".format(command))
+        self.log("sending monitor command: %s", command)
         assert self.monitor is not None
         self.monitor.send(message)
         return self.wait_for_monitor_prompt()
@@ -382,7 +332,7 @@ class Machine:
 
     def require_unit_state(self, unit: str, require_state: str = "active") -> None:
         with self.nested(
-            "checking if unit ‘{}’ has reached state '{}'".format(unit, require_state)
+            "checking if unit ‘%s’ has reached state '%s'", unit, require_state
         ):
             info = self.get_unit_info(unit)
             state = info["ActiveState"]
@@ -414,10 +364,10 @@ class Machine:
         """Execute each command and check that it succeeds."""
         output = ""
         for command in commands:
-            with self.nested("must succeed: {}".format(command)):
+            with self.nested("must succeed: %s", format(command)):
                 (status, out) = self.execute(command)
                 if status != 0:
-                    self.log("output: {}".format(out))
+                    self.log("output: %s", out)
                     raise Exception(
                         "command `{}` failed (exit code {})".format(command, status)
                     )
@@ -428,7 +378,7 @@ class Machine:
         """Execute each command and check that it fails."""
         output = ""
         for command in commands:
-            with self.nested("must fail: {}".format(command)):
+            with self.nested("must fail: %s", command):
                 (status, out) = self.execute(command)
                 if status == 0:
                     raise Exception(
@@ -448,7 +398,7 @@ class Machine:
             status, output = self.execute(command)
             return status == 0
 
-        with self.nested("waiting for success: {}".format(command)):
+        with self.nested("waiting for success: %s", command):
             retry(check_success)
             return output
 
@@ -463,7 +413,7 @@ class Machine:
             status, output = self.execute(command)
             return status != 0
 
-        with self.nested("waiting for failure: {}".format(command)):
+        with self.nested("waiting for failure: %s", command):
             retry(check_failure)
             return output
 
@@ -501,11 +451,11 @@ class Machine:
                 )
             return len(matcher.findall(text)) > 0
 
-        with self.nested("waiting for {} to appear on tty {}".format(regexp, tty)):
+        with self.nested("waiting for %s to appear on tty %s", regexp, tty):
             retry(tty_matches)
 
     def send_chars(self, chars: List[str]) -> None:
-        with self.nested("sending keys ‘{}‘".format(chars)):
+        with self.nested("sending keys ‘%s‘", chars):
             for char in chars:
                 self.send_key(char)
 
@@ -516,7 +466,7 @@ class Machine:
             status, _ = self.execute("test -e {}".format(filename))
             return status == 0
 
-        with self.nested("waiting for file ‘{}‘".format(filename)):
+        with self.nested("waiting for file ‘%s‘", filename):
             retry(check_file)
 
     def wait_for_open_port(self, port: int) -> None:
@@ -524,7 +474,7 @@ class Machine:
             status, _ = self.execute("nc -z localhost {}".format(port))
             return status == 0
 
-        with self.nested("waiting for TCP port {}".format(port)):
+        with self.nested("waiting for TCP port %s", port):
             retry(port_is_open)
 
     def wait_for_closed_port(self, port: int) -> None:
@@ -566,10 +516,7 @@ class Machine:
             filename = os.path.join(out_dir, "{}.png".format(filename))
         tmp = "{}.ppm".format(filename)
 
-        with self.nested(
-            "making screenshot {}".format(filename),
-            {"image": os.path.basename(filename)},
-        ):
+        with self.nested("making screenshot %s", filename):
             self.send_monitor_command("screendump {}".format(tmp))
             ret = subprocess.run("pnmtopng {} > {}".format(tmp, filename), shell=True)
             os.unlink(tmp)
@@ -671,7 +618,7 @@ class Machine:
             matches = re.search(regex, text) is not None
 
             if last and not matches:
-                self.log("Last OCR attempt failed. Text was: {}".format(text))
+                self.log("Last OCR attempt failed. Text was: %s", text)
 
             return matches
 
@@ -679,7 +626,7 @@ class Machine:
             retry(screen_matches)
 
     def wait_for_console_text(self, regex: str) -> None:
-        self.log("waiting for {} to appear on console".format(regex))
+        self.log("waiting for %s to appear on console", regex)
         # Buffer the console output, this is needed
         # to match multiline regexes.
         console = io.StringIO()
@@ -767,8 +714,8 @@ class Machine:
                 # Ignore undecodable bytes that may occur in boot menus
                 line = _line.decode(errors="ignore").replace("\r", "").rstrip()
                 self.last_lines.put(line)
-                eprint("{} # {}".format(self.name, line))
-                self.logger.enqueue({"msg": line, "machine": self.name})
+
+                self.logger.info("# %s", line)
 
         _thread.start_new_thread(process_serial_output, ())
 
@@ -777,7 +724,7 @@ class Machine:
         self.pid = self.process.pid
         self.booted = True
 
-        self.log("QEMU running (pid {})".format(self.pid))
+        self.log("QEMU running (pid %s)", self.pid)
 
     def cleanup_statedir(self) -> None:
         self.log("delete the VM state directory")
@@ -864,22 +811,20 @@ class Machine:
 
 
 def create_machine(args: Dict[str, Any]) -> Machine:
-    global log
-    args["log"] = log
     args["redirectSerial"] = os.environ.get("USE_SERIAL", "0") == "1"
     return Machine(args)
 
 
 def start_all() -> None:
     global machines
-    with log.nested("starting all VMs"):
+    with log_nested(log, "starting all VMs"):
         for machine in machines:
             machine.start()
 
 
 def join_all() -> None:
     global machines
-    with log.nested("waiting for all VMs to finish"):
+    with log_nested(log, "waiting for all VMs to finish"):
         for machine in machines:
             machine.wait_for_shutdown()
 
@@ -892,11 +837,11 @@ def run_tests() -> None:
     global machines
     tests = os.environ.get("tests", None)
     if tests is not None:
-        with log.nested("running the VM test script"):
+        with log_nested(log, "running the VM test script"):
             try:
                 exec(tests, globals())
             except Exception as e:
-                eprint("error: ")
+                log.exception("error in test script")
                 traceback.print_exc()
                 sys.exit(1)
     else:
@@ -911,12 +856,12 @@ def run_tests() -> None:
 
 @contextmanager
 def subtest(name: str) -> Iterator[None]:
-    with log.nested(name):
+    with log_nested(log, name):
         try:
             yield
             return True
         except Exception as e:
-            log.log(f'Test "{name}" failed with error: "{e}"')
+            log.exception("test %s failed")
             raise e
 
     return False
@@ -932,7 +877,7 @@ if __name__ == "__main__":
     )
     (cli_args, vm_scripts) = arg_parser.parse_known_args()
 
-    log = Logger()
+    main_log = logging.getLogger("test-driver")
 
     vlan_nrs = list(dict.fromkeys(os.environ.get("VLANS", "").split()))
     vde_sockets = [create_vlan(v) for v in vlan_nrs]
@@ -950,17 +895,16 @@ if __name__ == "__main__":
 
     @atexit.register
     def clean_up() -> None:
-        with log.nested("cleaning up"):
+        with log_nested(main_log, "cleaning up"):
             for machine in machines:
                 if machine.pid is None:
                     continue
-                log.log("killing {} (pid {})".format(machine.name, machine.pid))
+                main_log.info("killing %s (pid %s)", machine.name, machine.pid)
                 machine.process.kill()
             for _, _, process, _ in vde_sockets:
                 process.terminate()
-        log.close()
 
     tic = time.time()
     run_tests()
     toc = time.time()
-    print("test script finished in {:.2f}s".format(toc - tic))
+    main_log.info("test script finished in %.2fs", toc - tic)
