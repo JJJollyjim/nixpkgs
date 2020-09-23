@@ -1,0 +1,16 @@
+diff --git a/tools/virtiofsd/fuse_virtio.c b/tools/virtiofsd/fuse_virtio.c
+index 21c5d76d58..e97c5423aa 100644
+--- a/tools/virtiofsd/fuse_virtio.c
++++ b/tools/virtiofsd/fuse_virtio.c
+@@ -1013,11 +1013,6 @@ static int fv_create_listen_socket(struct fuse_session *se)
+         return -1;
+     }
+ 
+-    /* Check the vu_socket_path is already used */
+-    if (!fv_socket_lock(se)) {
+-        return -1;
+-    }
+-
+     /*
+      * Create the Unix socket to communicate with qemu
+      * based on QEMU's vhost-user-bridge

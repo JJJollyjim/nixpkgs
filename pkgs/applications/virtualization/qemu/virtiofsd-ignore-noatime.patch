@@ -1,0 +1,13 @@
+diff --git a/tools/virtiofsd/passthrough_ll.c b/tools/virtiofsd/passthrough_ll.c
+index e09d557d74..53fff8f973 100644
+--- a/tools/virtiofsd/passthrough_ll.c
++++ b/tools/virtiofsd/passthrough_ll.c
+@@ -1869,6 +1869,8 @@ static void update_open_flags(int writeback, struct fuse_file_info *fi)
+      * probably should be a configuration knob in daemon.
+      */
+     fi->flags &= ~O_DIRECT;
++
++    fi->flags &= ~O_NOATIME;
+ }
+ 
+ static void lo_create(fuse_req_t req, fuse_ino_t parent, const char *name,
