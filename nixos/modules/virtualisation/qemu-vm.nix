@@ -149,6 +149,11 @@ let
         idx=$((idx + 1))
       '')}
 
+      ${lib.optionalString cfg.nixStoreOnVirtioFS ''
+        ulimit -Sn "$(ulimit -Hn)"
+        ${qemu}/libexec/virtiofsd -o cache=always -o source=/nix/store --socket-path="$TMPDIR/virtio-fs-store" --root-uid=65534 --root-gid=65534 &
+      ''}
+
       # Start QEMU.
       exec ${qemuBinary qemu} \
           -name ${config.system.name} \
@@ -156,7 +161,11 @@ let
           -smp ${toString config.virtualisation.cores} \
           -device virtio-rng-pci \
           ${concatStringsSep " " config.virtualisation.qemu.networkingOptions} \
-          -virtfs local,path=/nix/store,security_model=none,mount_tag=store \
+          ${if cfg.nixStoreOnVirtioFS then ''
+              -chardev socket,id=char0,path="$TMPDIR/virtio-fs-store" \
+              -device vhost-user-fs-pci,queue-size=1024,chardev=char0,tag=store,cache-size=512M \
+              -object memory-backend-file,id=mem,size=${toString config.virtualisation.memorySize}M,mem-path=/dev/shm,share=on -numa node,memdev=mem \'' else ''
+              -virtfs local,path=/nix/store,security_model=none,mount_tag=store \''}
           -virtfs local,path=$TMPDIR/xchg,security_model=none,mount_tag=xchg \
           -virtfs local,path=''${SHARED_DIR:-$TMPDIR/xchg},security_model=none,mount_tag=shared \
           ${drivesCmdLine config.virtualisation.qemu.drives} \
@@ -515,6 +524,17 @@ in
           '';
       };
 
+    virtualisation.nixStoreOnVirtioFS =
+      mkOption {
+        default = false;
+        type = types.bool;
+        description =
+          ''
+            If enabled, /nix/store is mounted via virtiofs rather than 9p. This
+            can provide a significant performance boost, but is potentially
+            insecure when used outside of a nix build sandbox.
+          '';
+      };
   };
 
   config = {
@@ -592,7 +612,8 @@ in
 
     boot.initrd.availableKernelModules =
       optional cfg.writableStore "overlay"
-      ++ optional (cfg.qemu.diskInterface == "scsi") "sym53c8xx";
+      ++ optional (cfg.qemu.diskInterface == "scsi") "sym53c8xx"
+      ++ [ "virtiofs" ];
 
     virtualisation.bootDevice = mkDefault (driveDeviceName 1);
 
@@ -646,18 +667,20 @@ in
       }) cfg.emptyDiskImages)
     ];
 
-    # Mount the host filesystem via 9P, and bind-mount the Nix store
-    # of the host into our own filesystem.  We use mkVMOverride to
-    # allow this module to be applied to "normal" NixOS system
-    # configuration, where the regular value for the `fileSystems'
-    # attribute should be disregarded for the purpose of building a VM
-    # test image (since those filesystems don't exist in the VM).
+    # Mount the host filesystem via 9P or virtiofs, and bind-mount
+    # the Nix store of the host into our own filesystem.  We use
+    # mkVMOverride to allow this module to be applied to "normal"
+    # NixOS system configuration, where the regular value for the
+    # `fileSystems' attribute should be disregarded for the purpose
+    # of building a VM test image (since those filesystems don't
+    # exist in the VM).
     fileSystems = mkVMOverride (
       { "/".device = cfg.bootDevice;
         ${if cfg.writableStore then "/nix/.ro-store" else "/nix/store"} =
-          { device = "store";
-            fsType = "9p";
-            options = [ "trans=virtio" "version=9p2000.L" "cache=loose" ];
+          {
+            device = "store";
+            fsType = if cfg.nixStoreOnVirtioFS then "virtiofs" else "9p";
+            options = if cfg.nixStoreOnVirtioFS then [ ] else [ "trans=virtio" "version=9p2000.L" "cache=loose" ];
             neededForBoot = true;
           };
         "/tmp" = mkIf config.boot.tmpOnTmpfs
