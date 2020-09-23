@@ -6,6 +6,7 @@ import ./make-test-python.nix (pkgs: {
   nodes = {
     machine = { config, lib, pkgs, ... }: with lib; {
       virtualisation.emptyDiskImages = [ config.virtualisation.memorySize ];
+      virtualisation.nixStoreOnVirtioFS = mkOverride 0 false;
 
       systemd.services.backdoor.conflicts = [ "sleep.target" ];
 
