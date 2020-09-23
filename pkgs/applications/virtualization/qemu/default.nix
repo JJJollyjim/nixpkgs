@@ -1,4 +1,4 @@
-{ stdenv, fetchurl, fetchpatch, python, zlib, pkgconfig, glib
+{ stdenv, fetchurl, fetchpatch, fetchgit, python, zlib, pkgconfig, glib
 , ncurses, perl, pixman, vde2, alsaLib, texinfo, flex
 , bison, lzo, snappy, libaio, gnutls, nettle, curl
 , makeWrapper
@@ -42,10 +42,20 @@ stdenv.mkDerivation rec {
     + stdenv.lib.optionalString hostCpuOnly "-host-cpu-only"
     + stdenv.lib.optionalString nixosTestRunner "-for-vm-tests";
 
-  src = fetchurl {
-    url= "https://download.qemu.org/qemu-${version}.tar.xz";
-    sha256 = "1rd41wwlvp0vpialjp2czs6i3lsc338xc72l3zkbb7ixjfslw5y9";
-  };
+  src = if nixosTestRunner
+    then
+      fetchgit {
+        url = "https://gitlab.com/virtio-fs/qemu.git";
+        branchName = "virtio-fs-dev";
+        rev = "b0039d5890f4be252d9787760ec928a1aabe22b9";
+        fetchSubmodules = true;
+        sha256 = "1gv4r7dcjc329mmw4zaixlvawhg8bvz0yaggshspxrzkbsayd6bx";
+      }
+    else
+      fetchurl {
+        url= "https://download.qemu.org/qemu-${version}.tar.xz";
+        sha256 = "1rd41wwlvp0vpialjp2czs6i3lsc338xc72l3zkbb7ixjfslw5y9";
+      };
 
   nativeBuildInputs = [ python python.pkgs.sphinx pkgconfig flex bison ]
     ++ optionals gtkSupport [ wrapGAppsHook ];
