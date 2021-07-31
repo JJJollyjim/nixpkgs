@@ -3,8 +3,8 @@ with lib;
 {
   imports = [
     ../profiles/qemu-guest.nix
+    ../profiles/minimal.nix
   ];
-
 
   fileSystems."/" = {
     fsType = "ext4";
@@ -12,13 +12,19 @@ with lib;
     autoResize = true;
   };
 
-  boot.growPartition = true;
-  boot.initrd.availableKernelModules = [ "virtio_pci" ];
-
   fileSystems."/boot" = {
     device = "/dev/disk/by-label/ESP";
     fsType = "vfat";
   };
+
+  boot.growPartition = true;
+  boot.initrd.availableKernelModules = [ "virtio_pci" ];
+
+  boot.kernelParams = [ "console=ttyS0" ];
+
+  # Generate a systemd-boot menu.
+  boot.loader.systemd-boot.enable = true;
+  boot.loader.efi.canTouchEfiVariables = true;
 
   systemd.services.fetch-instance-ssh-keys = {
     description = "Fetch host keys and authorized_keys for root user";
@@ -44,9 +50,6 @@ with lib;
     };
   };
 
-  # Generate a systemd-boot menu.
-  boot.loader.systemd-boot.enable = true;
-  boot.loader.efi.canTouchEfiVariables = true;
 
   # Allow root logins only using SSH keys
   # and disable password authentication in general
@@ -57,7 +60,7 @@ with lib;
   # Rely on OCI's firewall instead
   networking.firewall.enable = mkDefault false;
 
-  networking.useDHCP = true;
+  networking.useDHCP = mkDefault true;
 
   # OCI has its own NTP server provided by the hypervisor
   networking.timeServers = [ "169.254.169.254" ];
@@ -80,4 +83,7 @@ with lib;
       serviceConfig.Type = "oneshot";
       serviceConfig.RemainAfterExit = true;
     };
+
+  # Help us stay under 1GB
+  services.udisks2.enable = mkDefault false;
 }
