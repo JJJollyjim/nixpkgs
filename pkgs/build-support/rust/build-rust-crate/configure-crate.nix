@@ -173,13 +173,15 @@ in ''
      mkdir -p $OUT_DIR
 
      (
+       envcmd="env"
        # Features should be set as environment variable for build scripts:
        # https://doc.rust-lang.org/cargo/reference/environment-variables.html#environment-variables-cargo-sets-for-build-scripts
+       # We can't use export, as many crates have features with colons in them, which shells do not support setting
        for feature in ${envFeatures}; do
-         export CARGO_FEATURE_$feature=1
+         envcmd="$envcmd \"CARGO_FEATURE_$feature=1\""
        done
 
-       target/build/${crateName}/build_script_build > target/build/${crateName}.opt
+       eval $envcmd target/build/${crateName}/build_script_build > target/build/${crateName}.opt
      )
 
      set +e
